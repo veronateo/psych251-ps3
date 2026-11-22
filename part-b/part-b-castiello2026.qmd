@@ -1,0 +1,103 @@
+---
+title: "Reproducibility check: Castiello et al. (2026), Experiment 3"
+author: "Verona Teo"
+date: today
+format:
+  html:
+    toc: true
+    embed-resources: true
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+<!-- Sections marked TODO are yours to fill in. -->
+
+## Article
+
+- Citation and DOI: Castiello, S., Pitliya, R. J., Lametti, D. R., et al. (2026). Affiliation in
+  human-AI interactions is based on shared psychological traits. *Communications Psychology, 4*,
+  93. <https://doi.org/10.1038/s44271-026-00433-8>
+- Data/materials repository URL: <https://github.com/santiagocdo/chatPersonalities>
+- Part A (known case) or Part B (a classmate's project paper): Part B
+- Part B only: the classmate's project repo, and which target outcome is its key effect:
+  TODO (project repo). The key effect is target 1, the mirror vs inverse paired t-test.
+
+## Target outcomes
+
+Written **before** opening the data (see this file's first commit). Scope: Experiment 3 only.
+TODO: one sentence on why you scoped it to Experiment 3.
+
+| # | Target outcome (quoted) | Paper value(s) |
+|---|---|---|
+| 1 (key effect) | "participants affiliated more with the LLM that mimicked their own 5-dimension personality profile [t(99) = 5.66, p < 0.001, d = 0.57 (0.36 to 0.78) ..." | t(99) = 5.66, p < .001, d = 0.57 [0.36, 0.78] |
+| 2 | "... and also, Wilcoxon signed rank test with continuity correction, V = 3600, p < 0.001)." | V = 3600, p < .001 |
+| 3 | "We found a significant interaction [β3 = −0.09, p = 0.045, Std. Coef. = 0.26 (0.01–0.51); Fig. 4B]: the larger the personality difference between each LLM the more participants affiliated with the LLM that mimicked their personality" | β3 = −0.09, p = .045, Std. Coef. = 0.26 [0.01, 0.51] |
+| 4 | "In total, 64% of participants affiliated more with the LLM that mirrored their personality (Supplementary Fig. S5)." | 64% |
+| 5 | "An interaction between the sentiment of participants' messages (Fig. 4E bottom panel) and the LLM condition was observed [F(784, 3) = 6.5, p < 0.001, η2 = 0.02 (0.01–1.00)]." | F = 6.5, p < .001, η² = .02 [.01, 1.00] |
+
+## Materials inventory
+
+Filled in after obtaining the data and code.
+
+| Item | Available? | Notes |
+|---|---|---|
+| Raw data | | |
+| Processed data | | |
+| Codebook / variable descriptions | | |
+| Analysis code | | |
+| Preregistration | | <https://aspredicted.org/9yg6-y3xp.pdf> (cited in the article, dated 23 June 2025) |
+
+## Reproduction
+
+The agent's work, under your direction. Keep all code visible.
+
+```{r}
+#| label: setup
+library(tidyverse)
+```
+
+```{r}
+#| label: load
+```
+
+```{r}
+#| label: preprocess
+```
+
+```{r}
+#| label: analysis
+```
+
+## Checker's verdict
+
+Filled in by you, not the agent.
+
+| # | Paper value | Reproduced value | Verdict (exact / minor / major / not reproducible) | Reason for discrepancy |
+|---|---|---|---|---|
+| 1 | t(99) = 5.66, p < .001, d = 0.57 [0.36, 0.78] | | | |
+| 2 | V = 3600, p < .001 | | | |
+| 3 | β3 = −0.09, p = .045, Std. Coef. = 0.26 [0.01, 0.51] | | | |
+| 4 | 64% | | | |
+| 5 | F = 6.5, p < .001, η² = .02 [.01, 1.00] | | | |
+
+Agent's own claim about success, and whether it was right:
+
+## Time
+
+- Your time (hours):
+- Agent wall-clock time (hours):
+- Stopped at the 4-hour cap? What remained:
+
+## Assessment
+
+Is the primary result analytically reproducible? What would have made this take 30 minutes?
+
+## AI documentation
+
+- Agent and interface (e.g., Claude Code, Codex CLI, Cursor):
+- Model and version, if the tool reports it:
+- Context you gave it (files, instructions, any context file):
+- Number of times you intervened, and the most important intervention:
+- Transcript: link to the exported transcript in your repo (`transcripts/`).
