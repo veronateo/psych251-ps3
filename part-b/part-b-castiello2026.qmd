@@ -21,13 +21,12 @@ execute:
   93. <https://doi.org/10.1038/s44271-026-00433-8>
 - Data/materials repository URL: <https://github.com/santiagocdo/chatPersonalities>
 - Part A (known case) or Part B (a classmate's project paper): Part B
-- Part B only: the classmate's project repo, and which target outcome is its key effect:
-  TODO (project repo). The key effect is target 1, the mirror vs inverse paired t-test.
+- Part B only: the classmate's project repo, and which target outcome is its key effect: <https://github.com/psych251/castiello2026>
+The key effect is target 1, the mirror vs inverse paired t-test.
 
 ## Target outcomes
 
-Written **before** opening the data (see this file's first commit). Scope: Experiment 3 only.
-TODO: one sentence on why you scoped it to Experiment 3.
+Written **before** opening the data (see this file's first commit). Scope: Experiment 3 only (what was replicated by student).
 
 | # | Target outcome (quoted) | Paper value(s) |
 |---|---|---|
@@ -43,31 +42,259 @@ Filled in after obtaining the data and code.
 
 | Item | Available? | Notes |
 |---|---|---|
-| Raw data | | |
-| Processed data | | |
-| Codebook / variable descriptions | | |
-| Analysis code | | |
-| Preregistration | | <https://aspredicted.org/9yg6-y3xp.pdf> (cited in the article, dated 23 June 2025) |
+| Raw data | Partly | `experiment3/` holds the participant table from the study platform (`2025_gptstudyusers_bfi.csv`, 119 sign-ups, 100 marked `Include data = 1`), the chatbot order file, and every chat message with a sentiment label already attached (`gpt_data_all_bfi.csv`, 5,626 messages from 117 users). Item-level BFI-44 answers for the main sample are not included, only scored trait means. The sentiment labels arrive pre-computed, so that labelling step cannot be rerun from the repo. Item-level BFI data exist only for the pilot (`experiment3/pilot/`). |
+| Processed data | Yes | `2025_gpt_bfi_scores.csv` (trait means, 1 to 5, 116 people), `2025_gpt_pcq_bfi.csv` (the six post-chat ratings for each chatbot, already limited to the 100 included participants). `experiment3/study1/` looks like an earlier partial export (49 rated participants). |
+| Codebook / variable descriptions | No | The README says which script goes with which experiment and documents the Experiment 1 and 2 platform nodes, but there is no variable list for Experiment 3. Column names are readable (e.g. `chat_again_mirror`). Gender is coded 1, 2, 3 with no key. `BigFive44_scoring.csv` gives the BFI-44 item-to-trait key and reverse-scored items (its `question` column is empty). |
+| Analysis code | Yes | `main_e3.R` (Experiment 3, Figure 4) plus `functions.R` (`summariseChatInteraction_e3`, used for the sentiment counts). Paths are relative to the repo root (it is an RStudio project). The script does not run from top to bottom as is: line 453 uses `print_fig`, which is only defined in `main.R`. Statistics come from `report::report_table()`, so the exact numbers depend on the versions of `report`, `effectsize` and `parameters`, and the repo does not record them. |
+| Preregistration | Yes | <https://aspredicted.org/9yg6-y3xp.pdf> (cited in the article, dated 23 June 2025). The repo also has the Word text (`asPredicted_v2.docx`) and the power analysis (`sample_size_calculation_exp3.R`). |
 
 ## Reproduction
 
 The agent's work, under your direction. Keep all code visible.
 
+The code below follows the steps in the authors' `main_e3.R` (and `functions.R` for the
+sentiment counts), rewritten with tidyverse. It reads the repo's files from
+`chatPersonalities/` and does not change them. For the mixed models and effect sizes it uses the
+same functions the authors used (`lmerTest::lmer`, `report::report_table`, which calls
+`effectsize` and `parameters`).
+
 ```{r}
 #| label: setup
 library(tidyverse)
+library(lmerTest)   # lmer() with Satterthwaite df, as in main_e3.R
+library(report)     # report_table(), as in main_e3.R
+
+data_dir <- "chatPersonalities/experiment3"
+
+# package versions matter for the effect size CIs, so print them
+sapply(c("lme4", "lmerTest", "report", "effectsize", "parameters"),
+       \(p) as.character(packageVersion(p)))
+
+# helper for the paper vs reproduced comparison tables
+show <- function(...) knitr::kable(tibble(...))
 ```
 
 ```{r}
 #| label: load
+bfi     <- read_csv(file.path(data_dir, "2025_gpt_bfi_scores.csv"), show_col_types = FALSE)
+ratings <- read_csv(file.path(data_dir, "2025_gpt_pcq_bfi.csv"), show_col_types = FALSE)
+users   <- read_csv(file.path(data_dir, "2025_gptstudyusers_bfi.csv"), show_col_types = FALSE)
+chats   <- read_csv(file.path(data_dir, "gpt_data_all_bfi.csv"), show_col_types = FALSE)
+
+c(bfi_rows = nrow(bfi), rated_participants = n_distinct(ratings$participant_ID),
+  users_included = sum(users$`Include data` %in% 1), chat_messages = nrow(chats),
+  chat_users = n_distinct(chats$userid))
+
+# every rated participant is one of the 100 marked "Include data = 1"
+all(ratings$participant_ID %in% users$participant_ID[users$`Include data` %in% 1])
 ```
 
 ```{r}
 #| label: preprocess
+traits <- c("extraversion_score", "agreeableness_score", "conscientiousness_score",
+            "openness_score", "neuroticism_score")
+
+# Personality distance between the two chatbots (main_e3.R lines 10-42).
+# Traits are moved from 1..5 to -2..+2; the inverse bot is the sign-flipped profile.
+# pers_distance = -(x . -x) = sum(x^2).
+bfi <- bfi |>
+  mutate(across(all_of(traits), \(x) x - 3)) |>
+  mutate(pers_distance = rowSums(across(all_of(traits), \(x) x^2)))
+
+# Affiliation score (main_e3.R lines 79-175): each of the six 1..5 ratings minus 3,
+# "different" and "distant" reversed, then averaged per participant and chatbot.
+# The long format keeps the authors' column order so that the averages are computed
+# in the same order (this matters for target 2, see below).
+aff <- ratings |>
+  pivot_longer(-participant_ID, names_to = "item", values_to = "value") |>
+  mutate(chat     = if_else(str_detect(item, "mirror"), "mirror", "inverse"),
+         response = value - 3,
+         likerts  = if_else(str_detect(item, "different|distant"), -response, response)) |>
+  group_by(participant_ID, chat) |>
+  summarise(likerts = mean(likerts), .groups = "drop") |>
+  left_join(select(bfi, participant_ID, pers_distance), by = "participant_ID")
+
+# one row per participant, mirror and inverse side by side
+aff_wide <- aff |>
+  select(participant_ID, chat, likerts) |>
+  pivot_wider(names_from = chat, values_from = likerts) |>
+  mutate(diff = mirror - inverse)
+
+c(participants = nrow(aff_wide), missing_distance = sum(is.na(aff$pers_distance)))
 ```
 
+### Target 1: paired t-test, mirror vs inverse (key effect)
+
 ```{r}
-#| label: analysis
+#| label: target1
+t1  <- t.test(aff_wide$mirror, aff_wide$inverse, paired = TRUE)
+t1r <- report_table(t1)   # what main_e3.R line 196 prints
+d1  <- effectsize::cohens_d(aff_wide$mirror, aff_wide$inverse, paired = TRUE)
+t1r
+
+show(statistic = c("t", "df", "p", "Cohen's d", "d 95% CI"),
+     paper      = c("5.66", "99", "< .001", "0.57", "[0.36, 0.78]"),
+     reproduced = c(sprintf("%.2f", t1$statistic), t1$parameter, format.pval(t1$p.value, 3),
+                    sprintf("%.2f", d1$Cohens_d),
+                    sprintf("[%.2f, %.2f]", d1$CI_low, d1$CI_high)),
+     unrounded  = c(sprintf("%.4f", t1$statistic), "", sprintf("%.2e", t1$p.value),
+                    sprintf("%.4f", d1$Cohens_d),
+                    sprintf("[%.4f, %.4f]", d1$CI_low, d1$CI_high)))
+```
+
+### Target 2: Wilcoxon signed rank test
+
+The value of V depends on how ties among the mirror minus inverse differences are ranked. The
+affiliation scores are means of six integers, so many differences should be exactly equal, but
+floating-point rounding makes some of them differ in the last digits. Then `wilcox.test()` ranks
+them as different values. The table shows V as the authors' code computes it (same order of
+averaging as `main_e3.R`; running the first 207 lines of `main_e3.R` itself also gives 3601.5),
+V when the averages are taken in a different order, and V when the scores are rounded to 8
+decimals so that equal differences really are tied.
+
+```{r}
+#| label: target2
+wx_authors <- wilcox.test(aff_wide$mirror, aff_wide$inverse, paired = TRUE)
+wx_authors   # "Wilcoxon signed rank test with continuity correction", as quoted in the paper
+
+# same scores, averaged in a different item order
+alt_score <- function(cond) {
+  r <- ratings
+  rowMeans(cbind(r[[paste0("chat_again_", cond)]], r[[paste0("enjoy_", cond)]],
+                 r[[paste0("similar_", cond)]], r[[paste0("understood_", cond)]],
+                 6 - r[[paste0("different_", cond)]], 6 - r[[paste0("distant_", cond)]]) - 3)
+}
+alt <- tibble(participant_ID = ratings$participant_ID,
+              mirror_alt = alt_score("mirror"), inverse_alt = alt_score("inverse")) |>
+  left_join(aff_wide, by = "participant_ID")
+max(abs(alt$mirror_alt - alt$mirror))   # the scores agree to within rounding error
+wx_alt     <- wilcox.test(alt$mirror_alt, alt$inverse_alt, paired = TRUE)
+wx_rounded <- wilcox.test(round(aff_wide$mirror, 8), round(aff_wide$inverse, 8), paired = TRUE)
+
+show(version    = c("paper", "authors' averaging order", "other averaging order",
+                    "rounded (exact ties)"),
+     V          = c("3600", wx_authors$statistic, wx_alt$statistic, wx_rounded$statistic),
+     p          = c("< .001", format.pval(c(wx_authors$p.value, wx_alt$p.value,
+                                            wx_rounded$p.value), 3)))
+```
+
+### Target 3: chatbot × personality distance interaction
+
+`main_e3.R` line 230 fits `lmer(likerts ~ chat*pers_distance + (1|participant_ID))`. R makes
+`inverse` the reference level (alphabetical), so the interaction term is "mirror minus inverse
+slope". The paper's β3 is negative but its standardized coefficient is positive, so the model is
+fitted below with both reference levels.
+
+```{r}
+#| label: target3
+m3 <- lmer(likerts ~ chat * pers_distance + (1 | participant_ID), data = aff)
+m3_mirror_ref <- lmer(likerts ~ chat * pers_distance + (1 | participant_ID),
+                      data = mutate(aff, chat = relevel(factor(chat), ref = "mirror")))
+
+summary(m3)$coefficients
+summary(m3_mirror_ref)$coefficients
+
+# standardized coefficient as report_table() computes it (refit on standardized data)
+std3 <- parameters::standardize_parameters(m3, method = "refit")
+std3
+
+b3 <- summary(m3)$coefficients[4, ]
+b3_m <- summary(m3_mirror_ref)$coefficients[4, ]
+show(statistic  = c("b3 (inverse = reference, authors' code)", "b3 (mirror = reference)",
+                    "p", "Std. Coef.", "Std. Coef. 95% CI"),
+     paper      = c("-0.09", "-0.09", ".045", "0.26", "[0.01, 0.51]"),
+     reproduced = c(sprintf("%.2f", b3["Estimate"]), sprintf("%.2f", b3_m["Estimate"]),
+                    sprintf("%.3f", b3["Pr(>|t|)"]), sprintf("%.2f", std3$Std_Coefficient[4]),
+                    sprintf("[%.2f, %.2f]", std3$CI_low[4], std3$CI_high[4])))
+```
+
+### Target 4: share of participants who affiliated more with the mirror chatbot
+
+```{r}
+#| label: target4
+count(aff_wide, direction = case_when(diff > 0 ~ "mirror higher",
+                                      diff < 0 ~ "inverse higher",
+                                      TRUE ~ "tie"))
+show(statistic = "% with mirror > inverse", paper = "64%",
+     reproduced = sprintf("%.0f%%", 100 * mean(aff_wide$diff > 0)))
+```
+
+### Target 5: sentiment of participants' messages × chatbot condition
+
+Following `summariseChatInteraction_e3()` in `functions.R`: punctuation and spaces are removed
+from the sentiment labels (one message is labelled `Mixed.`), the participant's messages in
+each chat are counted by sentiment, the counts are turned into proportions within each chat, and
+`main_e3.R` line 396 fits `anova(lmer(prop ~ sentiment * botcondition + (1|participant_ID)))`.
+
+```{r}
+#| label: target5
+sentiments <- c("Mixed", "Negative", "Neutral", "Positive")
+table(chats$usersentiment)
+
+user_sent <- chats |>
+  filter(userid %in% ratings$participant_ID) |>
+  mutate(sentiment = factor(str_remove_all(usersentiment, "[[:punct:] ]"), levels = sentiments)) |>
+  count(participant_ID = userid, botcondition = botpersonality, sentiment, .drop = FALSE) |>
+  complete(participant_ID, botcondition, sentiment, fill = list(n = 0)) |>
+  group_by(participant_ID, botcondition) |>
+  mutate(prop = n / sum(n)) |>
+  ungroup()
+c(rows = nrow(user_sent), participants = n_distinct(user_sent$participant_ID))
+
+a5  <- anova(lmer(prop ~ sentiment * botcondition + (1 | participant_ID), data = user_sent))
+a5
+a5r <- report_table(a5)   # partial eta squared with one-sided CI, as in main_e3.R
+a5r
+
+int <- a5["sentiment:botcondition", ]
+eta <- as.data.frame(a5r)[3, ]
+show(statistic  = c("df", "F", "p", "eta2 (partial)", "eta2 95% CI"),
+     paper      = c("(784, 3)", "6.5", "< .001", ".02", "[.01, 1.00]"),
+     reproduced = c(sprintf("(%d, %.0f)", int$NumDF, int$DenDF), sprintf("%.2f", int$`F value`),
+                    format.pval(int$`Pr(>F)`, 3), sprintf("%.2f", eta$Eta2_partial),
+                    sprintf("[%.2f, %.2f]", eta$Eta2_partial_CI_low, eta$Eta2_partial_CI_high)))
+```
+
+As a check, the authors' own function gives the same per-chat sentiment proportions:
+
+```{r}
+#| label: target5-check
+source("chatPersonalities/functions.R")   # defines summariseChatInteraction_e3(); needs gtools
+authors <- summariseChatInteraction_e3(as.data.frame(chats),
+                                       intersect(ratings$participant_ID, chats$userid))$combine
+user_cols <- paste0("user_", sentiments)
+authors_props <- authors |>
+  mutate(total = rowSums(across(all_of(user_cols))),
+         across(all_of(user_cols), \(x) x / total)) |>
+  pivot_longer(all_of(user_cols), names_to = "sentiment", values_to = "prop_authors",
+               names_prefix = "user_")
+check <- inner_join(user_sent, authors_props,
+                    by = c("participant_ID", "botcondition", "sentiment"))
+c(rows_matched = nrow(check), max_abs_difference = max(abs(check$prop - check$prop_authors)))
+```
+
+### Summary
+
+```{r}
+#| label: summary
+show(`#` = 1:5,
+     paper = c("t(99) = 5.66, p < .001, d = 0.57 [0.36, 0.78]",
+               "V = 3600, p < .001",
+               "b3 = -0.09, p = .045, Std. Coef. = 0.26 [0.01, 0.51]",
+               "64%",
+               "F(784, 3) = 6.5, p < .001, eta2 = .02 [.01, 1.00]"),
+     reproduced = c(
+       sprintf("t(%d) = %.2f, p %s, d = %.2f [%.2f, %.2f]", t1$parameter, t1$statistic,
+               ifelse(t1$p.value < .001, "< .001", sprintf("= %.3f", t1$p.value)),
+               d1$Cohens_d, d1$CI_low, d1$CI_high),
+       sprintf("V = %s (rounded ties: %s), p < .001", wx_authors$statistic, wx_rounded$statistic),
+       sprintf("b3 = %.2f (mirror ref: %.2f), p = %.3f, Std. Coef. = %.2f [%.2f, %.2f]",
+               b3["Estimate"], b3_m["Estimate"], b3["Pr(>|t|)"], std3$Std_Coefficient[4],
+               std3$CI_low[4], std3$CI_high[4]),
+       sprintf("%.0f%%", 100 * mean(aff_wide$diff > 0)),
+       sprintf("F(%d, %.0f) = %.2f, p < .001, eta2 = %.2f [%.2f, %.2f]", int$NumDF, int$DenDF,
+               int$`F value`, eta$Eta2_partial, eta$Eta2_partial_CI_low,
+               eta$Eta2_partial_CI_high)))
 ```
 
 ## Checker's verdict
@@ -76,28 +303,67 @@ Filled in by you, not the agent.
 
 | # | Paper value | Reproduced value | Verdict (exact / minor / major / not reproducible) | Reason for discrepancy |
 |---|---|---|---|---|
-| 1 | t(99) = 5.66, p < .001, d = 0.57 [0.36, 0.78] | | | |
-| 2 | V = 3600, p < .001 | | | |
-| 3 | β3 = −0.09, p = .045, Std. Coef. = 0.26 [0.01, 0.51] | | | |
-| 4 | 64% | | | |
-| 5 | F = 6.5, p < .001, η² = .02 [.01, 1.00] | | | |
+| 1 | t(99) = 5.66, p < .001, d = 0.57 [0.36, 0.78] | t(99) = 5.66, p < .001, d = 0.57 [0.35, 0.78] | minor | Possible differences in CI computation or `effectsize` version |
+| 2 | V = 3600, p < .001 | V = 3601.5, p < .001 | minor | Effects of averaging order |
+| 3 | β3 = −0.09, p = .045, Std. Coef. = 0.26 [0.01, 0.51] | β3 = 0.09, p = .045, Std. Coef. = 0.26 [0.01, 0.51]| minor | β3 sign inconsistent with the reported standardized coefficient (opposite reference coding) |
+| 4 | 64% | 64% | exact | N/A|
+| 5 | F = 6.5, p < .001, η² = .02 [.01, 1.00] | F(3, 792) = 6.50, p = .0002, η² = 0.02 [0.01, 1.00] | minor | Swapped degrees of freedom reported, and incorrect error df |
 
-Agent's own claim about success, and whether it was right:
+Agent's own claim about success, and whether it was right: Targets 1, 3, 4, and 5 reproduced, "within rounding or reporting slips." Target 2 does not match exactly: V = 3601.5 instead of 3600, though the conclusion (p < .001) holds.
+The agent's claim was accurate.
 
 ## Time
 
-- Your time (hours):
-- Agent wall-clock time (hours):
-- Stopped at the 4-hour cap? What remained:
+- Your time (hours): 0.5
+- Agent wall-clock time (hours): about 0.07 (4 minutes, 20:17:26 to 20:21:34 UTC on
+  2026-11-22, from the transcript's timestamps)
+- Stopped at the 4-hour cap? What remained: N/A
 
 ## Assessment
 
 Is the primary result analytically reproducible? What would have made this take 30 minutes?
 
+Mostly, with some potential small rounding differences. This would have taken 30 minutes if the code and data were not available. 
+
 ## AI documentation
 
-- Agent and interface (e.g., Claude Code, Codex CLI, Cursor):
-- Model and version, if the tool reports it:
-- Context you gave it (files, instructions, any context file):
-- Number of times you intervened, and the most important intervention:
-- Transcript: link to the exported transcript in your repo (`transcripts/`).
+- Agent and interface: Claude Code, in the Claude desktop app (Code tab). The reproducing agent
+  ran as its own session in `part-b/`. A second Claude Code session, which I directed, helped
+  me choose the target outcomes from the paper (before anyone opened the data), set up this
+  report, started the reproducing session and wrote its prompt. Afterwards it removed private
+  details from the exported transcript.
+- Model and version: Claude Opus 5.5 (`claude-opus-5-5`), medium effort, auto permission mode.
+- Context I gave it: the article URL, the authors' repository URL, and this report (with the
+  target outcomes already filled in and committed). This was the prompt:
+
+  > Reproduce the target outcomes for Experiment 3 of Castiello et al. (2026), "Affiliation in
+  > human-AI interactions is based on shared psychological traits", Communications Psychology
+  > 4, 93. The article is at https://www.nature.com/articles/s44271-026-00433-8 and the
+  > authors' data and code are at https://github.com/santiagocdo/chatPersonalities.
+  >
+  > The report is `part-b-castiello2026.qmd` in this folder. Its "Target outcomes" table lists
+  > the five results to reproduce. Do this:
+  > 1. Clone the authors' repo into `chatPersonalities/` in this folder, and don't modify it.
+  > 2. Fill in the "Reproduction" section of the report with R code that loads the Experiment 3
+  >    data and computes each target outcome. Keep the code visible, and print each reproduced
+  >    value clearly next to the paper's value. Make the code read data from
+  >    `chatPersonalities/` using relative paths.
+  > 3. Fill in the "Materials inventory" table from what the repo actually contains.
+  > 4. Render the report with `quarto render part-b-castiello2026.qmd`.
+  >
+  > Don't edit the "Target outcomes", "Checker's verdict", "Time", "Assessment" or "AI
+  > documentation" sections. Don't make git commits or push. If something is unclear or
+  > you're stuck, ask me rather than guessing. When you're done, say for each target whether
+  > you think it reproduced, and why.
+
+  It also got a one-line note: this is a course reproducibility check, the target outcomes were
+  chosen before the data were opened, and the student judges the results. The "no commits"
+  rule was added because the Part A agent made a commit nobody asked for. There was no context
+  file (CLAUDE.md) in that folder.
+- Number of times I intervened, and the most important intervention: 0. The agent asked no
+  questions and I did not steer it. It followed the instructions not to commit and not to edit
+  my sections. It installed two R packages (`report`, `gtools`) without asking.
+- Transcript: [`transcripts/part-b-agent-castiello2026.jsonl`](https://github.com/veronateo/psych251-ps3/blob/main/transcripts/part-b-agent-castiello2026.jsonl)
+  (the session's exported transcript, with my email, home paths and username replaced by
+  placeholders, and 22 occurrences of participants' Prolific IDs, printed while the agent
+  inspected the data, replaced by `<participant_id>`). The link works once the file is pushed.

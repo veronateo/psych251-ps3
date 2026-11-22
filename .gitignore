@@ -4,3 +4,6 @@
 .quarto/
 *_files/
 *.html
+
+# authors repo cloned for Part B (public at github.com/santiagocdo/chatPersonalities)
+part-b/chatPersonalities/
