@@ -1,0 +1,147 @@
+---
+title: "Reproducibility check: Joel, Teper & MacDonald (2014)"
+author: "Verona Teo"
+date: today
+format:
+  html:
+    toc: true
+    embed-resources: true
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+<!-- Sections marked TODO are yours to fill in. -->
+
+## Article
+
+- Citation and DOI: Joel, S., Teper, R., & MacDonald, G. (2014). People overestimate their
+  willingness to reject potential romantic partners by overlooking their concern for other
+  people. *Psychological Science, 25*(12), 2233–2240.
+  <https://doi.org/10.1177/0956797614552828>
+- Data/materials repository URL: <https://osf.io/873fp/> (the PS3 folder `ps3/Group A/Choice 1`
+  supplied the Study 1 data file used here)
+- Part A (known case) or Part B (a classmate's project paper): Part A
+- Part B only: not applicable
+
+## Target outcomes
+
+Taken from the Study 1 results section, as quoted in the folder's `reproducibilityReport.Rmd`.
+
+| # | Target outcome (quoted) | Paper value(s) |
+|---|---|---|
+| 1 | "Only 10 of the 61 participants in the hypothetical condition chose to exchange contact information with the unattractive potential date (16%)." | 10 / 61 (16%) |
+| 2 | "26 of the 71 participants in the real condition chose to exchange contact information (37%)." | 26 / 71 (37%) |
+| 3 | "A chi-square test of independence indicated that participants were significantly less likely to reject the unattractive potential date in the real condition compared with the hypothetical condition, X^2(1, N = 132) = 6.77, p = .009." | χ²(1, N = 132) = 6.77, p = .009 |
+
+## Materials inventory
+
+| Item | Available? | Notes |
+|---|---|---|
+| Raw data | No | The shared file has 132 rows, the analytic sample. The 150 recruited participants and the 18 exclusions are not in it, so the exclusions cannot be checked. |
+| Processed data | Yes | `Empathy Gap Study 1 data.sav` (SPSS), 132 rows × 125 columns. The variables needed for the analyses come after a marker column, `REQUIRED_VARIABLES_START_BELOW`. |
+| Codebook / variable descriptions | Partial | No separate codebook. SPSS value labels define `condition` (0 = hypothetical, 1 = real) and `exchangeinfo` (1 = yes, 2 = no). |
+| Analysis code | No | Not in the PS3 folder. The OSF page was not checked. |
+| Preregistration | No | None mentioned in the article. |
+
+## Reproduction
+
+The code below is the agent's, copied unchanged from its filled-in
+`reproducibilityReport.Rmd`. Only the data path changed, to point at this repo's copy of the data.
+
+```{r}
+#| label: setup
+library(tidyverse)
+library(knitr)
+library(haven)
+```
+
+```{r}
+#| label: load
+d <- read_sav("data/Empathy Gap Study 1 data.sav")
+```
+
+```{r}
+#| label: preprocess
+# The file already contains the final analytic sample (N = 132); the 18 exclusions
+# described in the article (15 suspicious, 3 not single) were applied before sharing.
+nrow(d)
+
+d_tidy <- d %>%
+  select(ID, condition, exchangeinfo) %>%
+  mutate(condition = as_factor(condition),        # 0 = hypothetical, 1 = real
+         exchangeinfo = as_factor(exchangeinfo))  # 1 = yes, 2 = no
+
+d_tidy %>% count(condition, exchangeinfo)
+# No missing values on either variable
+sum(is.na(d_tidy$condition)); sum(is.na(d_tidy$exchangeinfo))
+```
+
+```{r}
+#| label: analysis
+desc <- d_tidy %>%
+  group_by(condition) %>%
+  summarise(n = n(),
+            n_exchange = sum(exchangeinfo == "yes"),
+            pct_exchange = round(100 * mean(exchangeinfo == "yes")))
+kable(desc, col.names = c("Condition", "N", "Exchanged info", "% exchanged"))
+
+tab <- table(d_tidy$condition, d_tidy$exchangeinfo)
+tab
+chi <- chisq.test(tab, correct = FALSE)
+chi
+
+tibble(statistic = "X^2", df = chi$parameter, N = sum(tab),
+       value = round(chi$statistic, 2), p = round(chi$p.value, 3)) %>%
+  kable()
+```
+
+## Checker's verdict
+
+Filled in by you, not the agent.
+
+| # | Paper value | Reproduced value | Verdict (exact / minor / major / not reproducible) | Reason for discrepancy |
+|---|---|---|---|---|
+| 1 | 10 / 61 (16%) | 10 / 61 (16%) | exact | N/A |
+| 2 | 26 / 71 (37%) | 26 / 71 (37%) | exact | N/A |
+| 3 | χ²(1, N = 132) = 6.77, p = .009 | χ²(1, N = 132) = 6.77, p = .009 | exact | N/A |
+
+Agent's own claim about success, and whether it was right: the agent wrote, "Yes. All target values reproduced exactly." Yes, the agent was right.
+
+## Time
+
+- Your time (hours): 0.1
+- Agent wall-clock time (hours): about 0.01 (49 seconds, 03:05:46 to 03:06:35 UTC on
+  2026-11-22, from the session's timestamps)
+- Stopped at the 4-hour cap? What remained: N/A
+
+## Assessment
+
+Yes, the primary result is analytically reproducible. This would have taken longer if data were missing.
+
+
+## AI documentation
+
+- Agent and interface: Claude Code, in the Claude desktop app (Code tab). The reproducing agent
+  ran as its own session. A second Claude Code session, which you directed, started it and
+  wrote its prompt.
+- Model and version: Claude Opus 5.5 (`claude-opus-5-5`), medium effort, auto permission mode.
+- Context you gave it: the working folder `ps3/Group A/Choice 1` (article PDF, `data/`, and
+  `reproducibilityReport.Rmd`) and this prompt:
+
+  > Reproduce the target outcomes described in `reproducibilityReport.Rmd` in this folder. Use
+  > the article (`article.pdf`) and the authors' data in `data/`. Fill in the report template
+  > (`reproducibilityReport.Rmd`) with your code and results, and render it to HTML. When you
+  > are done, say whether you think the reproduction succeeded.
+
+  It also got a one-line note: this is a reproducibility check for a course problem set, and
+  it should work only from what is in the folder. There was no context file (CLAUDE.md) in
+  that folder.
+- Number of times you intervened, and the most important intervention: 0 during the run. The
+  agent asked no questions. Afterwards, the agent had made a git commit nobody asked for,
+  into the local clone of the course repo (`psych251/problem_sets`). It was not pushed, and it
+  was undone while the agent's edits were kept. 
+- Transcript: [`transcripts/part-a-agent-joel2014.jsonl`](../transcripts/part-a-agent-joel2014.jsonl)
+  (the session's exported transcript, with email, home paths and username replaced by
+  placeholders).
