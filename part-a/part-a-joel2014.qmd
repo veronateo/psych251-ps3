@@ -142,6 +142,6 @@ Yes, the primary result is analytically reproducible. This would have taken long
   agent asked no questions. Afterwards, the agent had made a git commit nobody asked for,
   into the local clone of the course repo (`psych251/problem_sets`). It was not pushed, and it
   was undone while the agent's edits were kept. 
-- Transcript: [`transcripts/part-a-agent-joel2014.jsonl`](../transcripts/part-a-agent-joel2014.jsonl)
+- Transcript: [`transcripts/part-a-agent-joel2014.jsonl`](https://github.com/veronateo/psych251-ps3/blob/main/transcripts/part-a-agent-joel2014.jsonl)
   (the session's exported transcript, with email, home paths and username replaced by
   placeholders).

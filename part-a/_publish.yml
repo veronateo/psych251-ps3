@@ -1,0 +1,4 @@
+- source: part-a-joel2014.qmd
+  posit-connect-cloud:
+    - id: 01a2015a-7770-3d27-9b15-8538889c2526
+      url: https://connect.posit.cloud/veronateo/content/01a2015a-7770-3d27-9b15-8538889c2526
